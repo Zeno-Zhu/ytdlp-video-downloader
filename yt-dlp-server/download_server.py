@@ -342,17 +342,24 @@ DOWNLOAD_DIR = os.environ.get("YTDLP_DOWNLOAD_DIR") or DEFAULT_DOWNLOAD_DIR
 COOKIES_FROM_BROWSER = None   # config.json 可选：让 yt-dlp 直接读取浏览器 Cookie（firefox/chrome...）
 UPDATE_YTDLP = False          # config.json 可选：下载前自动更新 yt-dlp
 
-FORMATS = {
-    "best": ["-f", "bv*+ba/b"],
-    "mp4": ["-f", "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b"],
-    "audio": ["-x", "--audio-format", "mp3", "--audio-quality", "0"],
-}
-
 # 抖音等站点会额外返回带水印的 download_addr 格式，默认链路里排除
 NO_WATERMARK = "[format_id!^=download_addr]"
 
 # 通用视频选择器：排除水印版本；不写死分辨率，分辨率交给 -S 排序决定（见 resolve_format）
 SAFE_VIDEO = "bv*" + NO_WATERMARK + "+ba/b"
+
+# 「优先直连下载」排序键。
+# 背景：分片流（m3u8 / dash）会先落一地 -FragN 临时文件再合并，结束时逐个删除；
+# 在带「批量删除保护」的环境里（例如由 AI 助手代跑命令），这一步可能被拦住，
+# 结果文件明明下完了却以失败收场。proto:https 让 yt-dlp 优先挑直连 https 的格式，
+# 实测不影响画质（只在同档位之间取舍），但能显著减少临时文件。
+PREFER_DIRECT = "proto:https"
+
+FORMATS = {
+    "best": ["-f", SAFE_VIDEO, "-S", PREFER_DIRECT],
+    "mp4": ["-f", "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b", "-S", PREFER_DIRECT],
+    "audio": ["-x", "--audio-format", "mp3", "--audio-quality", "0"],
+}
 
 
 # ---------------- 配置 ----------------
@@ -591,10 +598,10 @@ def resolve_format(fmt):
     m = re.match(r"^(\d{3,4})(mp4)?$", fmt)   # "720" / "720p" 归一化后为 "720mp4"
     if m:
         height = int(m.group(1))
-        # 排序键按优先级：分辨率最接近 > 容器偏好 > 编码偏好（H.264 兼容性最好）
-        sort = f"res:{height},vcodec:h264"
+        # 排序键按优先级：分辨率最接近 > 容器偏好 > 编码偏好（H.264 兼容性最好）> 直连优先
+        sort = f"res:{height},vcodec:h264,{PREFER_DIRECT}"
         if m.group(2):
-            sort = f"res:{height},ext:mp4:m4a,vcodec:h264"
+            sort = f"res:{height},ext:mp4:m4a,vcodec:h264,{PREFER_DIRECT}"
         return ["-f", SAFE_VIDEO, "-S", sort]
     return FORMATS["best"]
 

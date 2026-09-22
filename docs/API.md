@@ -271,9 +271,23 @@ curl -s http://127.0.0.1:8787/api/tasks/ab12cd34ef56
 `[height<=720]` 会命中 360x640，等于白白降一大档。`-S res:720` 按「短边最接近 720」排序，
 横屏 → 1280x720、竖屏 → 720x1280，两种画幅都正确（实测）。
 
-排序键：`res:<N>,ext:mp4:m4a,vcodec:h264`（分辨率优先 → 容器偏好 → H.264 兼容性最好）。
+排序键：`res:<N>,ext:mp4:m4a,vcodec:h264,proto:https`
+（分辨率优先 → 容器偏好 → H.264 兼容性最好 → 直连优先）。
 
-### 4.6 环境变量
+### 4.6 优先直连（`proto:https`）
+
+排序键最后一项 `proto:https` 让 yt-dlp 优先挑**直连 https** 的格式，避开分片流
+（`m3u8` / `dash`）。这不影响画质，但能避免一个很隐蔽的失败：
+
+> 分片流会先落一地 `-FragN` 临时文件再合并，结束时逐个删除。
+> 如果命令是**由 AI 助手代跑**的，宿主环境可能带「批量删除保护」，
+> 删到第 50 个文件时被拦下 → **文件其实已经下完，却以失败收场**
+> （错误里会出现 `SAFE_DELETE_BULK_CONFIRM_REQUIRED` 之类的字样）。
+
+遇到这种情况：换 `--quality 720`（同档位通常有直连格式）、或指定 `--quality id:<直连格式ID>`
+（`--info` 里能看 `format_id`），或者干脆自己在本机终端里跑一次。
+
+### 4.7 环境变量
 
 | 变量 | 说明 |
 |---|---|
@@ -282,7 +296,7 @@ curl -s http://127.0.0.1:8787/api/tasks/ab12cd34ef56
 | `YTDLP_SERVER_DIR` | 指定 `yt-dlp-server/` 目录（CLI 找不到内核时用） |
 | `http_proxy` / `https_proxy` | 非 Windows 下作为系统代理来源 |
 
-### 4.7 错误码
+### 4.8 错误码
 
 | `error_code` | 含义 | 处理建议 |
 |---|---|---|
@@ -324,6 +338,7 @@ python vdl.py "https://www.youtube.com/watch?v=jXwOcpkMQAA" --info --json
 | 中文标题乱码 | 子进程必须带 `PYTHONUTF8=1`（内核已处理，自己写脚本调时注意） |
 | YouTube 报 SSL EOF | 换 `--proxy` 策略试（`none` ↔ `system`）；Clash TUN 模式下优先 `none` |
 | 抖音报需要 Cookie | 插件「🍪 同步」，或往 `yt-dlp-server/cookies/douyin.com.txt` 放 Netscape 格式 Cookie |
-| 竖屏视频下到了 360p | 别用 `[height<=...]` 选择器，用 `-S res:N`（见 4.5） |
+| `竖屏视频下到了 360p` | 别用 `[height<=...]` 选择器，用 `-S res:N`（见 4.5） |
+| 提示 `SAFE_DELETE_BULK_CONFIRM_REQUIRED` / 临时分片删不掉，文件下完却报错 | 分片流的临时文件清理被宿主环境的批量删除保护拦了（常见于 AI 助手代跑）。换直连格式：`--quality 720` 或 `--quality id:<格式ID>`（见 4.6） |
 | 下载到一半失败 | 看 `error_code`；`network`/`timeout` 会自动重试另一种链路 |
 | 服务日志 | `yt-dlp-server/server.log`（服务）、`launcher.log`（启动器） |

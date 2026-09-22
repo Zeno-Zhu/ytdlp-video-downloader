@@ -89,6 +89,13 @@ PY="C:/Users/Administrator/.workbuddy/binaries/python/versions/3.13.12/python.ex
 - **大文件要有耐心**：`--json` 会一直等到下载完成才输出；一个 1GB 的视频可能好几分钟。
   要立刻拿回控制权就自己 `run_in_background`，或改用 MCP 的 `wait=false`。
 - **不要并发狂跑**：同一时刻最多跑 2~3 个下载，YouTube 会限流。
+- **万一报 `SAFE_DELETE_BULK_CONFIRM_REQUIRED`（或临时分片删不掉）**：这是宿主的
+  「批量删除保护」拦住了 yt-dlp 清理分片临时文件——**文件其实已经下完了**。
+  处理：改下直连格式（`--quality 720`，或从 `--info` 里挑一个 `format_id` 用
+  `--quality id:<id>`），或让用户在本机终端里跑一次。默认排序已带 `proto:https`
+  优先直连，正常情况下不会碰到。
+- **下载目录里出现 `.f616.mp4.part` / `-FragN`**：上次失败的残留，yt-dlp 下次会接着下；
+  想清干净就只删这些明确是残留的文件，**不要**对 `downloads\` 做通配删除。
 
 ## 还想更省事：MCP
 
