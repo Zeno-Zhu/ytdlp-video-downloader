@@ -4,6 +4,75 @@
 **浏览器插件**（点着用）、**命令行 `vdl.py`**（一行命令）、**MCP 服务器**（给 AI 直接调用）、
 **Skill / AGENTS.md**（让 AI 知道怎么用）。
 
+---
+
+## 把这一行发给 AI（换机器 / 让 AI 自己装）
+
+把下面**整段**复制给你的 AI 助手（WorkBuddy / Codex / Claude Code 都行），它会自己拉代码、
+装依赖、把自己接好，然后把用法报给你。**不需要你手动做任何事。**
+
+```text
+帮我在本机装好 yt-dlp 视频下载工具，从这个仓库拉取：
+https://github.com/Zeno-Zhu/ytdlp-video-downloader
+
+1. 选个合适的位置克隆仓库（Windows 建议 "E:\AI软件\视频下载"；路径含空格必须全程加引号）
+2. cd 进仓库，运行 python setup.py --test
+   —— 它会检查 Python / yt-dlp / ffmpeg、生成默认配置、联网验证一次；哪项失败就按提示装好
+3. 运行 python install_ai.py --all
+   —— 装上 Skill（接入你自己）+ 注册 MCP + 写 ~/.codex/AGENTS.md
+4. 验证：python vdl.py "https://www.youtube.com/watch?v=jXwOcpkMQAA" --info --json
+   期望拿到 {"ok": true, "title": ..., "quality_options": [2160, 1440, 1080, 720, ...]}
+5. 最后告诉我两件事：仓库装在哪、以后我怎么一句话让你下载（含「存到指定文件夹」的写法）
+
+默认画质 720p MP4 / H.264。任何一步报错就把报错原文贴给我，不要自己猜着改。
+```
+
+**为什么这样写**：仓库里已经带了 `setup.py`（环境自检）和 `install_ai.py`（AI 接入）两个脚本，
+AI 只要照顺序跑就行；第 5 步强制它回报用法，你才知道它接好了没。换机器重跑这一段即可——
+`install_ai.py` 会把本机绝对路径重新写进 Skill，不用手工改。
+
+## 一句话下载（装好之后）
+
+```bash
+python vdl.py "<视频链接>" --quality 720 --json        # 存到默认下载目录
+python vdl.py "<视频链接>" --dir "D:\视频\教程" --json  # 存到指定文件夹（不存在会自动建）
+python vdl.py "<视频链接>" --dir 教程 --json            # 存到 <默认目录>\教程
+```
+
+`--dir` 细节（**相对路径不跟当前目录跑**，避免 AI 从别处调用时落错地方）：
+
+| 写法 | 落到哪 |
+|---|---|
+| `--dir "D:\视频\教程"` | 绝对路径，直接用 |
+| `--dir 教程` / `--dir a/b` | 相对**默认下载目录** → `<默认目录>\教程` |
+| `--dir ./out` / `--dir ../out` | 相对**当前目录**（显式 `./` `../` 才这样） |
+| `--dir %USERPROFILE%\Videos` / `~/Videos` | 展开环境变量 / `~` |
+
+解析结果一定会在 stderr 日志和 JSON 的 `dir` 字段里回显成**绝对路径**，不会产生歧义。
+
+---
+
+> **v3.1 重点更新（保存目录 + AI 接入 + 一个契约 bug）**
+> 1. **`--dir` 支持指定文件夹，规则统一**：绝对路径直接用；**相对路径相对「默认下载目录」而不是
+>    当前目录**（AI 从任意 cwd 调用都不会落错地方），`--dir 教程` → `<默认目录>\教程`；
+>    显式 `./` `../` 才相对当前目录；支持 `~` 与 `%VAR%`/`$VAR`；目录不存在自动创建（含多级）。
+>    解析实现挪进内核 `download_server.resolve_download_dir()`，CLI / MCP / 插件共用一份。
+> 2. **`--dir` 不合法时退出码为 `2`**（参数错误），与「下载失败」的 `1` 区分开；错误码 `bad_dir`，
+>    且**在联网之前就失败**（0.7 秒返回，不浪费带宽）。
+> 3. **修掉 JSON 契约 bug**：降级重试（直连失败 → 退代理）成功时，`error` / `error_code` / `hint`
+>    还残留着上一次失败的文本，出现「`ok: true` 却带着 `error`」的自相矛盾。现在成功时一律清空。
+>    已加回归测试 `tools/retry_contract_test.py`（不依赖网络，模拟两条链路）。
+> 4. **一条命令接入 AI**：`python install_ai.py`（默认装 Skill，最省）；`--all` 再带 MCP 与
+>    `~/.codex/AGENTS.md`。Skill 正文由模板 `skills/video-download/SKILL.md.in` 渲染，
+>    本机绝对路径在安装时写死，换机器重跑即可。
+> 5. MCP 的 `list_downloads` 也能指定目录了（`dir` 参数，规则同 `--dir`）。
+> 6. **`--dir` 相关测试全部隔离到系统临时目录**。原因值得记一笔：本机环境下
+>    `os.rmdir()` 删**非空**目录本该报错，却被宿主的「安全删除」层拦截、
+>    把整棵目录树移进回收站隔离区**并返回成功**——一段"自底向上清空目录"的测试代码
+>    就这样把整个 `downloads\`（2.2GiB）搬走了（已从隔离区完整拷回，ffprobe 校验无损）。
+>    现在测试用 `tempfile.mkdtemp()` 隔离，并在删前校验路径确实在临时目录下。
+>    写清理脚本前请读 `docs/API.md` §6.1。
+
 > **v3.0 重点更新（给 AI 用 + 修两个硬伤）**
 > 1. **一行命令下载**：`python vdl.py "<链接>" --quality 720 --json` —— AI 助手（WorkBuddy / Codex）
 >    拿到链接即可直接下载，stdout 输出稳定的 JSON 契约，不用去碰插件；
@@ -59,7 +128,9 @@ E:\AI软件\视频下载\
 │   └── icons\
 ├── tools\
 │   ├── e2e_test.py                # 真实案例端到端测试（Chrome + 插件 + 抖音）
-│   └── mcp_selftest.py            # MCP 协议自测（initialize / tools/list / tools/call）
+│   ├── mcp_selftest.py            # MCP 协议自测（initialize / tools/list / tools/call）
+│   ├── dir_test.py                # --dir 解析规则测试（9 种写法 + 非法路径边界，全程隔离在临时目录）
+│   └── retry_contract_test.py     # 降级重试后 JSON 契约回归（不依赖网络，同样隔离）
 ├── downloads\                     # 视频下载目录
 ├── install_host.bat               # 【一键安装】插件启动服务 + 开机自启
 └── start-server.bat               # 手动启动服务（备用）
@@ -93,7 +164,8 @@ JSON 对象（进度/日志走 stderr），AI 直接取 `file_path` 就行：
 | 只要音频 MP3 | `python vdl.py "<url>" --audio --json` |
 | 顺便下字幕 | `python vdl.py "<url>" --subs --json` |
 | 先看看是什么视频 | `python vdl.py "<url>" --info --json` |
-| 存到指定目录 | `python vdl.py "<url>" --dir "D:\Videos" --json` |
+| 存到指定目录 | `python vdl.py "<url>" --dir "D:\视频\教程" --json` |
+| 存到默认目录下的子文件夹 | `python vdl.py "<url>" --dir 教程 --json` → `<默认目录>\教程` |
 | 抖音分享文案直接粘 | `python vdl.py "9.92 复制打开抖音… https://v.douyin.com/xxxx/ …"` |
 
 ### 一条命令接入 AI（推荐）

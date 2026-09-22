@@ -306,11 +306,18 @@ def agents_block(py):
 "{fwd(py)}" "{fwd(VDL)}" "<视频链接>" --quality 720 --json
 ```
 
-- stdout 只有一个 JSON 对象：先看 `ok`，成功则把 `file_path` 给用户，`resolution` 用来确认清晰度。
+- stdout 只有一个 JSON 对象：**先看 `ok`**，成功则把 `file_path` 给用户，`resolution` 用来确认清晰度。
+  成功时 `error` / `error_code` / `hint` 一定是 `null`，不要拿它们判断成败。
 - 默认 720p MP4 / H.264，横屏竖屏都能选对档位。
 - 支持 YouTube / 抖音 / B站 / TikTok / X 等上千站点，粘贴分享文案（含中文）也能识别出链接。
 - 只要音频加 `--audio`；先探清晰度用 `--info --json`；下整个合集加 `--playlist`。
+- **用户说"存到某个文件夹"时用 `--dir`**：
+  - 绝对路径直接用：`--dir "D:/视频/教程"`
+  - 相对名字原样传：`--dir 教程` → 落到**默认下载目录**下的 `教程/`（相对路径不相对当前目录）
+  - 目录不存在会自动创建；不要把用户说的相对名字自己拼成绝对路径
+  - 成功时 JSON 的 `dir` 字段是解析后的绝对路径，回报时带上
 - 失败时读 `error` / `error_code` / `hint`；抖音类报 `need_cookies` 说明要先在浏览器登录并同步 Cookie。
+  `--dir` 不合法会返回 `error_code=bad_dir` 且退出码为 2。
 - 完整说明：`{fwd(REPO)}/docs/API.md`；本仓库还有 `AGENTS.md` 与 `README.md`。
 {MARK_END}"""
 

@@ -165,7 +165,12 @@ TOOLS = [
                     "description": "清晰度：720(默认) / 1080 / 480 / best / audio / id:<格式ID>",
                     "default": "720",
                 },
-                "dir": {"type": "string", "description": "保存目录（绝对路径，可省略用默认目录）"},
+                "dir": {
+                    "type": "string",
+                    "description": "保存目录。绝对路径直接用；相对路径相对默认下载目录"
+                                   "（如 \"教程\" → <默认目录>/教程）；显式 ./ 或 ../ 相对当前目录；"
+                                   "支持 ~ 与 %VAR%；不存在会自动创建。省略=默认下载目录",
+                },
                 "audio_only": {"type": "boolean", "description": "只要音频（MP3）", "default": False},
                 "subs": {"type": "boolean", "description": "同时下载字幕（转 srt）", "default": False},
                 "wait": {
@@ -189,10 +194,15 @@ TOOLS = [
     },
     {
         "name": "list_downloads",
-        "description": "列出默认下载目录里已有的媒体文件（按时间倒序），用于确认之前下过什么。",
+        "description": "列出某个下载目录里已有的媒体文件（按时间倒序）。默认列默认下载目录，"
+                       "可用 dir 指定别的目录（规则同 download_video 的 dir）。",
         "inputSchema": {
             "type": "object",
-            "properties": {"limit": {"type": "integer", "description": "最多返回几条", "default": 20}},
+            "properties": {
+                "limit": {"type": "integer", "description": "最多返回几条", "default": 20},
+                "dir": {"type": "string",
+                        "description": "要列出的目录（省略=默认下载目录；相对路径相对默认下载目录）"},
+            },
         },
     },
     {
@@ -218,15 +228,26 @@ TOOLS = [
 MEDIA_EXTS = (".mp4", ".mkv", ".webm", ".mov", ".flv", ".m4a", ".mp3", ".opus", ".aac", ".wav")
 
 
-def default_download_dir() -> str:
-    """默认下载目录：与插件/vdl.py 共用同一份 config.json"""
+def resolve_dir_arg(raw=None) -> str:
+    """解析下载目录（复用内核 `download_server.resolve_download_dir()` 唯一实现）。
+
+    `raw` 的取值规则见 docs/API.md §4.2：绝对路径直接用；相对路径相对默认下载目录
+    （`"教程"` → `<默认目录>/教程`）；显式 `./` `../` 相对当前目录；支持 `~` 与 `%VAR%`。
+    不合法时抛内核的 DirError，由调用方转成工具错误。
+    """
     try:
         sys.path.insert(0, os.path.join(HERE, "yt-dlp-server"))
         import download_server as ds
-        ds.load_config()
-        return ds.DOWNLOAD_DIR
-    except Exception:
+        return ds.resolve_download_dir(raw)
+    except ImportError:
+        if raw:
+            return os.path.abspath(os.path.expanduser(raw))
         return os.path.join(HERE, "downloads")
+
+
+def default_download_dir() -> str:
+    """默认下载目录：与插件/vdl.py 共用同一份 config.json"""
+    return resolve_dir_arg(None)
 
 
 # ---------------------------------------------------------------- 工具实现
@@ -268,7 +289,11 @@ def tool_preview_video(a: dict) -> dict:
 
 def tool_list_downloads(a: dict) -> dict:
     limit = int(a.get("limit") or 20)
-    d = default_download_dir()
+    try:
+        d = resolve_dir_arg(a.get("dir"))
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "error_code": "bad_dir",
+                "hint": "换一个已存在的目录，或省略 dir 用默认下载目录"}
     items = []
     try:
         for name in os.listdir(d):

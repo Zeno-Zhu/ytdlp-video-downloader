@@ -26,21 +26,41 @@ python vdl.py "<视频链接>" --info --json     # 标题/作者/时长/全部�
 | 1080p | `--quality 1080` |
 | 只要音频 MP3 | `--audio` |
 | 同时下字幕（srt） | `--subs` |
-| 指定保存目录 | `--dir "D:\\Videos"` |
+| 指定保存目录 | `--dir "D:\\视频\\教程"` |
+| 指定默认目录下的子文件夹 | `--dir 教程` → `<默认目录>\\教程` |
 | 整个播放列表 | `--playlist`（默认只下单个视频） |
 | 下完在资源管理器选中文件 | `--open` |
 | 指定精确格式 | `--quality id:<format_id>`（id 从 `--info` 里取） |
 
+## `--dir` 规则（用户说"存到某个文件夹"时必读）
+
+**相对路径相对「默认下载目录」，不是相对当前工作目录**——所以从任何 cwd 调用结果都一样。
+
+| 用户说法 | 传什么 |
+|---|---|
+| "存到 D:\视频\教程" | `--dir "D:\视频\教程"` |
+| "存到教程文件夹" | `--dir 教程`（会落到默认下载目录下的 `教程\`） |
+| "就存当前目录" | `--dir ./` |
+| "存到桌面" | `--dir "%USERPROFILE%\Desktop"` |
+
+- 目录不存在会**自动创建**（含多级），不要先自己 mkdir。
+- **不要把用户说的相对名字自己拼成绝对路径**，直接原样传给 `--dir`。
+- 成功时 JSON 里的 `dir` 字段是解析后的绝对路径，跟用户回报时带上。
+- 不合法时 `error_code="bad_dir"`、**退出码 2**（联网前就失败）。
+
 ## 输出契约
 
 ```json
-{"ok": true, "title": "...", "file_path": "E:\\...\\xxx.mp4", "filename": "xxx.mp4",
- "size_mb": 128.1, "resolution": "1280x720", "duration_sec": 556, "extractor": "youtube",
- "cookies_used": null, "proxy_used": null, "attempts": 1, "elapsed_sec": 20.6,
- "error": null, "error_code": null, "hint": null}
+{"ok": true, "title": "...", "dir": "E:\\...", "file_path": "E:\\...\\xxx.mp4",
+ "filename": "xxx.mp4", "size_mb": 128.1, "resolution": "1280x720", "duration_sec": 556,
+ "extractor": "youtube", "cookies_used": null, "proxy_used": null, "attempts": 1,
+ "elapsed_sec": 20.6, "error": null, "error_code": null, "hint": null}
 ```
 
-退出码：`0` 成功 / `1` 下载或解析失败 / `2` 参数错误。
+**判断成败只看 `ok`**：`ok=true` 时 `error`/`error_code`/`hint` 一定是 `null`（即使 `attempts>1`
+说明中途换过代理链路，成功结果里也不会残留上一条链路的错误）。
+
+退出码：`0` 成功 / `1` 下载或解析失败 / `2` 参数错误（含 `--dir` 不合法）。
 
 ## 不要动的几处（踩过坑）
 
@@ -58,6 +78,17 @@ python vdl.py "<视频链接>" --info --json     # 标题/作者/时长/全部�
 
 - 下载目录里若出现 `.fXXXX.mp4.part` / `-FragN` 残留，那是失败任务的中间产物，
   只删这些明确带 `.part` / `.ytdl` / `-Frag` 的文件；**不要**对 `downloads\` 做通配批量删除。
+
+> ⚠️ **本机环境的一个坑（实测踩到过，损失 2.2GiB 文件）**
+> 在这里删除目录时，宿主的「安全删除」层会拦截：`os.rmdir()` / `shutil.rmtree()` 在目录
+> **非空**时本该报错，实际却被当成删除请求**把整棵目录树移进回收站隔离区，并返回成功**。
+> 于是「自底向上清理空目录」的循环会一路删到 `downloads` 本身——
+> 你以为只删了 `downloads/a/b/c`，实际上整个 `downloads` 都没了（好在能在回收站找回）。
+>
+> **规矩**：任何测试 / 清理脚本都不要在真实的 `downloads\` 里建目录再删。
+> 用 `tempfile.mkdtemp()` 建隔离环境（可临时替换 `download_server.DOWNLOAD_DIR`
+> 并把 `load_config` 置空），只在系统临时目录里折腾。参考 `tools/dir_test.py` 的写法。
+> 另外：删目录前先把进程的 cwd 切出去，否则 Windows 会留下空目录链。
 
 ## 更省事的路径：MCP
 

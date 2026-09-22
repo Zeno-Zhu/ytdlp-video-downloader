@@ -74,6 +74,14 @@ python install_ai.py --uninstall     # 卸载（只删自己装的，陌生文�
 WorkBuddy 写完 `mcp.json` **不会自动生效**：打开「连接器 → 自定义连接器」，
 对 `ytdlp-video-downloader` 点**信任**才启用。
 
+### 0.4 换机器 / 让 AI 自己装（一条指令）
+
+真实场景里通常不是你敲命令，而是把一段话丢给 AI 让它照做。直接复制
+**README 顶部的「把这一行发给 AI」**那段提示词即可——里面已经写明了克隆位置、
+`setup.py --test`、`install_ai.py --all`、验证命令，以及最后必须回报什么。
+
+> 提示词只放在 README 一处，避免两处内容漂移；本文档只解释机制。
+
 ---
 
 ## 1. CLI —— `vdl.py`
@@ -87,7 +95,7 @@ python vdl.py <url> [<url> ...] [选项]
 | 选项 | 说明 |
 |---|---|
 | `-q, --quality` | `best` \| `720`(默认) \| `1080` \| `480` \| `2160` \| `mp4` \| `audio` \| `id:<格式ID>`；也接受 `720p` / `720mp4` 写法 |
-| `-d, --dir` | 保存目录（绝对路径）。不传则读 `config.json` → 环境变量 `YTDLP_DOWNLOAD_DIR` → `<仓库>/downloads` |
+| `-d, --dir` | 保存目录。绝对路径直接用；**相对路径相对「默认下载目录」**（`--dir 教程` → `<默认目录>/教程`）；显式 `./` `../` 相对当前目录；支持 `~` 与 `%VAR%`/`$VAR`；不存在自动创建。不传则读 `config.json` → `YTDLP_DOWNLOAD_DIR` → `<仓库>/downloads`。详见 §4.2 |
 | `--info` | 只解析元数据，不下载 |
 | `--json` | stdout 输出机器可读 JSON（AI 首选） |
 | `--audio` | 仅提取音频 MP3（等价 `--quality audio`） |
@@ -150,7 +158,7 @@ python vdl.py <url> [<url> ...] [选项]
 |---|---|
 | `0` | 成功 |
 | `1` | 下载失败或解析失败（看 `error_code`） |
-| `2` | 参数错误（清晰度写错、服务目录找不到等） |
+| `2` | 参数错误：清晰度写错、服务目录找不到、**`--dir` 不合法（`error_code=bad_dir`）** |
 
 ### 1.4 示例
 
@@ -175,9 +183,9 @@ python vdl.py "https://youtu.be/XXXX" --dir "D:\Videos" --subs --open          #
 
 | 工具 | 参数 | 说明 |
 |---|---|---|
-| `download_video` | `url`(必填)、`quality`(默认 `720`)、`dir`、`audio_only`、`subs`、`wait`(默认 `true`) | 下载视频。`wait=false` 时立即返回 `task_id` |
+| `download_video` | `url`(必填)、`quality`(默认 `720`)、`dir`、`audio_only`、`subs`、`wait`(默认 `true`) | 下载视频。`wait=false` 时立即返回 `task_id`。`dir` 规则同 CLI `--dir`（见 §4.2） |
 | `preview_video` | `url` | 只解析元数据，不下载 |
-| `list_downloads` | `limit`(默认 20) | 列出默认下载目录里的媒体文件（按时间倒序） |
+| `list_downloads` | `limit`(默认 20)、`dir`(省略=默认下载目录) | 列出某个下载目录里的媒体文件（按时间倒序）；`dir` 规则同 §4.2 |
 | `get_task_status` | `task_id` | 查后台任务状态；完成后 `result` 字段里带完整下载结果 |
 | `open_folder` | `path` | 在文件管理器里定位文件 |
 
@@ -288,9 +296,37 @@ curl -s http://127.0.0.1:8787/api/tasks/ab12cd34ef56
 | `cookies_from_browser` | 让 yt-dlp 直接读浏览器 Cookie（`firefox` / `chrome` / `edge`…）。**不推荐**：Chrome 127+ 的 DPAPI 加密通常读不了，用插件同步更稳 |
 | `update_ytdlp` | 为 `true` 时下载前自动更新 yt-dlp |
 
-### 4.2 下载目录优先级
+### 4.2 下载目录优先级与 `dir` 解析规则
 
-`--dir` / API 的 `dir` 参数 > `config.json` 的 `download_dir` > 环境变量 `YTDLP_DOWNLOAD_DIR` > `<仓库>/downloads`
+优先级：
+
+```
+--dir / MCP 的 dir 参数  >  config.json 的 download_dir  >  环境变量 YTDLP_DOWNLOAD_DIR  >  <仓库>/downloads
+```
+
+**`dir` 取值解析规则**（唯一实现在 `download_server.resolve_download_dir()`，
+CLI `--dir`、MCP `dir`、HTTP `dir` 三处共用，`vdl.py` 只做转发）：
+
+| 输入 | 解析结果 |
+|---|---|
+| 空 / 不传 | 默认下载目录 |
+| `D:\视频\教程`（绝对路径） | `D:\视频\教程` |
+| `教程`、`a/b`（普通相对路径） | **相对默认下载目录** → `<默认目录>\教程`、`<默认目录>\a\b` |
+| `./out`、`../out`、`.`、`..`（显式相对） | 相对**当前工作目录** |
+| `~/Videos`、`%USERPROFILE%\Videos`、`$HOME/Videos` | 先展开 `~` 与环境变量，再按上面规则判定 |
+
+> **为什么相对路径不相对 cwd**：AI / 脚本可能从任意工作目录调用本工具（比如 `C:\`），
+> 若相对 cwd，「存到教程文件夹」会落到意想不到的地方。约定为「相对默认下载目录」后，
+> 调用方在哪儿都能得到同一个结果；要相对当前目录必须**显式**写 `./`。
+>
+> 解析结果一律在 stderr 日志与 JSON 的 `dir` 字段里回显为**绝对路径**，调用方不必自己推算。
+
+目录不存在会自动创建（含多级）。以下情况抛 `DirError`，CLI 对应 `error_code = "bad_dir"`
+且**退出码 2**（在联网之前就失败）：
+
+- 路径指向一个已存在的**文件**
+- 路径含非法字符 / 盘符不存在，`makedirs` 失败
+- 目录存在但没有写权限
 
 ### 4.3 Cookie
 
@@ -355,8 +391,13 @@ curl -s http://127.0.0.1:8787/api/tasks/ab12cd34ef56
 | `network` | 连接/SSL 失败 | 同上；`auto` 模式下已自动重试过另一种链路 |
 | `unavailable` | 视频不存在/已删除/私密 | 无解，换个链接 |
 | `format` | 该清晰度不可用 | 用 `--info` 看可用档位后重选 |
-| `no_ytdlp` | 找不到 yt-dlp | `pip install -U yt-dlp` 或跑 `setup.ps1` |
+| `no_ytdlp` | 找不到 yt-dlp | `pip install -U yt-dlp` 或在本仓库跑 `python setup.py` |
+| `bad_dir` | `--dir` 不合法（指向文件 / 非法字符 / 不可写） | 换可写目录；规则见 §4.2。CLI 退出码为 **2** |
 | `unknown` | 其它 | 看 `error` 原文 |
+
+> 注意：`ok: true` 时 `error` / `error_code` / `hint` **一定是 `null`**。
+> `auto` 代理模式下第一条链路失败、第二条成功的场景，成功结果里不会残留上一条链路的错误
+> （回归测试见 `tools/retry_contract_test.py`）。判断成败请只看 `ok`。
 
 ---
 
@@ -394,3 +435,22 @@ python vdl.py "https://www.youtube.com/watch?v=jXwOcpkMQAA" --info --json
 | 提示 `SAFE_DELETE_BULK_CONFIRM_REQUIRED` / 临时分片删不掉，文件下完却报错 | 分片流的临时文件清理被宿主环境的批量删除保护拦了（常见于 AI 助手代跑）。换直连格式：`--quality 720` 或 `--quality id:<格式ID>`（见 4.6） |
 | 下载到一半失败 | 看 `error_code`；`network`/`timeout` 会自动重试另一种链路 |
 | 服务日志 | `yt-dlp-server/server.log`（服务）、`launcher.log`（启动器） |
+| **整个 downloads 目录不见了** | 先翻**回收站**：本机宿主的「安全删除」层会把被删目录整棵移进回收站隔离区（`<盘>:\$Recycle.Bin\<SID>\$R*`），文件无损，拷回来即可 |
+
+### 6.1 ⚠️ 写清理脚本前必读（实测踩到过）
+
+**本机环境下删除目录会被拦截**：`os.rmdir()` / `shutil.rmtree()` 在目录**非空**时本该抛
+`ENOTEMPTY`，实际却被安全删除层当成删除请求，**把整棵目录树移进回收站隔离区并返回成功**。
+
+后果：一段"自底向上清理空目录"的循环会一路删到 `downloads` 本身——你以为只清了
+`downloads/a/b/c`，实际上整个 `downloads` 都没了（2.2GiB）。而且 `returncode == 0`
+和 `ignore_errors=True` 都掩盖了这件事。
+
+写任何测试 / 清理脚本时：
+
+1. **不要在真实 `downloads\` 里建目录再删**。用 `tempfile.mkdtemp()` 建隔离环境：
+   临时替换 `download_server.DOWNLOAD_DIR`，并把 `ds.load_config` 置空
+   （否则 `config.json` 会把它改回真实路径）。参考 `tools/dir_test.py`。
+2. 清理前**校验目标路径确实在系统临时目录下**，不是就拒绝。
+3. 删目录前先 `os.chdir()` 切出该目录，否则 Windows 删不掉进程的 cwd，留下空目录链。
+4. 只删自己这一步创建的路径，不要"顺手清理"任何预先存在的东西。

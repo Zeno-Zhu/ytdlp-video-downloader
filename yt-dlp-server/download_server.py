@@ -410,6 +410,56 @@ def save_config():
         os.replace(tmp, CONFIG_FILE)
 
 
+# ---------------- 下载目录解析（唯一实现） ----------------
+
+class DirError(Exception):
+    """下载目录不合法：路径指向文件、无法创建、不可写……"""
+
+
+def resolve_download_dir(cli_dir=None):
+    """解析下载目录，返回绝对路径并确保其可用。
+
+    优先级：`cli_dir` > config.json 的 download_dir > 环境变量 YTDLP_DOWNLOAD_DIR
+            > `<仓库>/downloads`
+
+    `cli_dir`（即 CLI 的 `--dir`）取值规则——**相对路径不相对 cwd**，
+    这样 AI / 脚本从任意工作目录调用时行为可预测：
+
+        1. 先展开 `~` 与环境变量：`~/Videos`、`%USERPROFILE%\\Videos`、`$HOME/Videos`
+        2. 展开后是绝对路径            → 直接用
+        3. 显式 `./` `../` `.` `..`    → 相对**当前目录**
+        4. 其余相对路径                → 相对**默认下载目录**（`--dir 教程` → `<默认目录>\\教程`）
+
+    目录不存在会自动创建（含多级）。失败抛 DirError。
+    这是三处入口（CLI / MCP / HTTP）共用的唯一实现，不要在别处再写一份。
+    """
+    load_config()
+    default_dir = os.path.abspath(DOWNLOAD_DIR)
+
+    raw = (cli_dir or "").strip().strip('"').strip("'")
+    if raw:
+        expanded = os.path.expandvars(os.path.expanduser(raw))
+        if os.path.isabs(expanded):
+            d = expanded
+        elif expanded in (".", "..") or expanded.startswith(("./", ".\\", "../", "..\\")):
+            d = os.path.abspath(expanded)
+        else:
+            d = os.path.join(default_dir, expanded)
+        d = os.path.abspath(os.path.normpath(d))
+    else:
+        d = default_dir
+
+    if os.path.isfile(d):
+        raise DirError(f"目标路径是一个文件，不是文件夹：{d}")
+    try:
+        os.makedirs(d, exist_ok=True)
+    except OSError as exc:
+        raise DirError(f"无法创建下载目录 {d}（{exc}）")
+    if not os.access(d, os.W_OK):
+        raise DirError(f"下载目录没有写入权限：{d}")
+    return d
+
+
 # ---------------- Cookie 管理 ----------------
 
 def url_host(url):

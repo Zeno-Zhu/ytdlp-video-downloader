@@ -20,7 +20,7 @@ vdl.py — 视频下载统一 CLI（AI / 脚本 / 命令行 唯一入口）
     python vdl.py <url> [<url> ...] [选项]
 
       --quality, -q   best | 720 | 1080 | 480 | mp4 | audio | id:<格式ID>   (默认 720)
-      --dir, -d       保存目录（默认读 config.json，其次 YTDLP_DOWNLOAD_DIR，其次 ./downloads）
+      --dir, -d       保存目录（见下方「--dir 解析规则」）
       --info          只解析元数据，不下载（返回标题/时长/可用清晰度清单）
       --json          输出机器可读 JSON（AI 首选）
       --audio         仅提取音频 MP3（等价 --quality audio）
@@ -34,7 +34,22 @@ vdl.py — 视频下载统一 CLI（AI / 脚本 / 命令行 唯一入口）
 
 退出码
 ------
-    0 成功    1 下载/解析失败    2 参数错误
+    0 成功    1 下载/解析失败    2 参数错误（含 --dir 不合法）
+
+--dir 解析规则（重要）
+---------------------
+优先级：`--dir` > `config.json` 的 download_dir > 环境变量 `YTDLP_DOWNLOAD_DIR`
+        > `<仓库>/downloads`
+
+`--dir` 的取值按下面顺序解析（**相对路径不相对当前目录**，避免 AI 从别的 cwd 调用时落错地方）：
+
+    1. 先展开 `~` 与环境变量：`~/Videos`、`%USERPROFILE%\\Videos`、`$HOME/Videos`
+    2. 展开后是绝对路径          → 直接用            `--dir "D:\\视频"`
+    3. 显式 `./` `../` `.` `..`  → 相对**当前目录**    `--dir ./out`
+    4. 其余相对路径              → 相对**默认下载目录** `--dir 教程` → `<下载目录>\\教程`
+
+结果一定会在 stderr 日志与 JSON 的 `dir` 字段里回显为**绝对路径**，不会产生歧义。
+目录不存在会自动创建（含多级）。
 
 示例
 ----
@@ -42,6 +57,8 @@ vdl.py — 视频下载统一 CLI（AI / 脚本 / 命令行 唯一入口）
     python vdl.py "https://youtu.be/XXXX" -q 1080 --json        # 指定 1080p，输出 JSON
     python vdl.py "https://youtu.be/XXXX" --info                # 只看信息
     python vdl.py "https://youtu.be/XXXX" --audio               # 提取 MP3
+    python vdl.py "https://youtu.be/XXXX" --dir "D:\\视频\\教程"  # 存到指定文件夹
+    python vdl.py "https://youtu.be/XXXX" --dir 教程             # 存到 <下载目录>\\教程
 """
 from __future__ import annotations
 
@@ -55,7 +72,7 @@ import sys
 import time
 import uuid
 
-CLI_VERSION = "1.0"
+CLI_VERSION = "1.1"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SERVER_DIR = os.environ.get("YTDLP_SERVER_DIR") or os.path.join(HERE, "yt-dlp-server")
@@ -156,15 +173,17 @@ def quality_label(q: str) -> str:
 
 # ---------------------------------------------------------------- 目录 / 模板
 
+DirError = ds.DirError          # 目录错误类型也由内核定义，保证各入口判定一致
+
+
 def resolve_dir(cli_dir: str | None) -> str:
-    """下载目录优先级：--dir > config.json > YTDLP_DOWNLOAD_DIR > <仓库>/downloads"""
-    ds.load_config()                       # 读 config.json（与浏览器插件同一份配置）
-    if cli_dir:
-        d = os.path.abspath(os.path.expanduser(cli_dir))
-    else:
-        d = ds.DOWNLOAD_DIR
-    os.makedirs(d, exist_ok=True)
-    return d
+    """解析下载目录并确保可用（抛 ds.DirError）。
+
+    唯一实现在内核 `download_server.resolve_download_dir()`，这里只做转发——
+    CLI / MCP / HTTP 三处入口共用同一套规则，不要在别处再写一份。
+    `--dir` 的解析规则见模块 docstring「--dir 解析规则」。
+    """
+    return ds.resolve_download_dir(cli_dir)
 
 
 def find_produced_file(dl_dir: str, since: float, prefer: list[str] | None = None) -> str | None:
@@ -365,13 +384,19 @@ def cmd_download_one(url: str) -> dict:
     ytdlp = ds.ensure_ytdlp()
     if not ytdlp:
         result.update(error="未找到 yt-dlp，请先执行: pip install -U yt-dlp",
-                      error_code="no_ytdlp", hint="或运行本仓库的 setup.ps1 自动安装",
+                      error_code="no_ytdlp", hint="或在本仓库目录运行 python setup.py",
                       elapsed_sec=round(time.time() - started, 2))
         return result
 
-    dl_dir = resolve_dir(ARGS.dir)
+    try:
+        dl_dir = resolve_dir(ARGS.dir)     # 内部已 makedirs
+    except DirError as exc:
+        result.update(error=str(exc), error_code="bad_dir",
+                      hint="换一个可写目录，例如 --dir \"D:/视频\"；相对路径相对默认下载目录，"
+                           "要相对当前目录请写 ./xxx",
+                      elapsed_sec=round(time.time() - started, 2))
+        return result
     result["dir"] = dl_dir
-    os.makedirs(dl_dir, exist_ok=True)
 
     template = ARGS.name or "%(title).200B [%(id)s].%(ext)s"
     out_tpl = template if os.path.isabs(template) else os.path.join(dl_dir, template)
@@ -416,6 +441,11 @@ def cmd_download_one(url: str) -> dict:
 
         if rc == 0:
             result["ok"] = True
+            # 关键：降级重试成功时必须清掉上一次尝试留下的失败信息，
+            # 否则 ok=true 却带着 error/error_code（消费方按 error 判断会误判为失败）
+            result["error"] = None
+            result["error_code"] = None
+            result["hint"] = None
             if final_file:
                 result["file_path"] = final_file
                 result["filename"] = os.path.basename(final_file)
@@ -459,7 +489,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="视频链接（可多个；支持抖音/YouTube/B站/TikTok/X 等上千站点，也支持粘贴分享文案）")
     p.add_argument("-q", "--quality", default=None,
                    help="清晰度：best | 720 | 1080 | 480 | mp4 | audio | id:<格式ID>（默认 720）")
-    p.add_argument("-d", "--dir", default=None, help="保存目录（绝对路径）")
+    p.add_argument("-d", "--dir", default=None, metavar="PATH",
+                   help="保存目录。绝对路径直接用；相对路径相对【默认下载目录】（--dir 教程 → "
+                        "<默认目录>/教程）；显式 ./ 或 ../ 相对当前目录；支持 ~ 与 %VAR%/$VAR。"
+                        "不存在会自动创建")
     p.add_argument("--info", action="store_true", help="只解析元数据，不下载")
     p.add_argument("--json", action="store_true", help="输出机器可读 JSON（AI 首选）")
     p.add_argument("--audio", action="store_true", help="仅提取音频 MP3")
@@ -526,6 +559,10 @@ def main() -> int:
         for r in results:
             if r.get("file_path"):
                 open_in_explorer(r["file_path"])
+
+    # --dir 不合法属于参数错误（退出码 2），要能和"下载失败"（1）区分开
+    if any(r.get("error_code") == "bad_dir" for r in results):
+        return 2
     return 0 if ok_all else 1
 
 
