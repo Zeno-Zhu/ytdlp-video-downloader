@@ -43,3 +43,5 @@ desktop.ini
 *.tmp
 *.part
 /scratch/
+# 临时/一次性脚本（下划线开头，不进仓库）
+/tools/_*.py
