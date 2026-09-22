@@ -1,0 +1,42 @@
+# ---------------- 第三方源码（体积大，用 setup.py 自取或 git clone）----------------
+/yt-dlp/
+
+# ---------------- 下载产物 ----------------
+/downloads/
+
+# ---------------- 运行时数据（每台机器不同，不入库）----------------
+/yt-dlp-server/cookies/
+/yt-dlp-server/config.json
+/yt-dlp-server/history.json
+/yt-dlp-server/*.log
+/yt-dlp-server/*.log.1
+/yt-dlp-server/mcp-task-*.log
+/yt-dlp-server/native_manifest.json
+
+# ---------------- 打包产物（用 build_host.ps1 重新生成）----------------
+/yt-dlp-server/ytdlp_host.exe
+/yt-dlp-server/ytdlp_host.exe.bak
+/yt-dlp-server/build/
+/yt-dlp-server/dist/
+/yt-dlp-server/*.spec
+
+# ---------------- Python ----------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# ---------------- 编辑器 / 系统 ----------------
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# ---------------- 临时文件 ----------------
+*.tmp
+*.part
+/scratch/

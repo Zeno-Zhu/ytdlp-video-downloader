@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    :root {
+      --bg: #16161f;
+      --card: #1f1f2c;
+      --border: #2e2e40;
+      --text: #e8e8f0;
+      --muted: #9a9ab0;
+      --accent: #f03c3c;
+      --ok: #34c759;
+      --bad: #ff453a;
+      --warn: #ffd60a;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 372px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+      font-size: 13px;
+      padding: 14px;
+    }
+    h1 { font-size: 15px; display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+    h1 img { width: 22px; height: 22px; border-radius: 5px; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 11px; padding: 2px 8px; border-radius: 20px;
+      background: var(--card); border: 1px solid var(--border); color: var(--muted);
+    }
+    .badge.ok { color: var(--ok); border-color: #2a5c3a; background: #12251a; }
+    .badge.bad { color: var(--bad); border-color: #5c2a2a; background: #251212; }
+    .badge.warn { color: var(--warn); border-color: #5c522a; background: #252112; }
+    .field { margin: 10px 0; }
+    label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+    input[type="text"], select {
+      width: 100%; padding: 8px 10px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--card); color: var(--text);
+      font-size: 12.5px; outline: none;
+    }
+    input[type="text"]:focus, select:focus { border-color: var(--accent); }
+    .row { display: flex; gap: 8px; align-items: center; }
+    select { flex: 1; }
+    button {
+      border: none; border-radius: 8px; padding: 9px 14px;
+      font-size: 13px; font-weight: 600; cursor: pointer;
+      transition: filter .15s;
+    }
+    button:active { filter: brightness(.85); }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-ghost { background: var(--card); color: var(--text); border: 1px solid var(--border); }
+    .hint { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.5; word-break: break-all; white-space: pre-line; }
+    .mini-badge {
+      display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px;
+      padding: 2px 8px; border-radius: 20px; cursor: pointer;
+      background: #12251a; color: var(--ok); border: 1px solid #2a5c3a;
+    }
+
+    /* 预览卡片 */
+    .preview {
+      display: none; margin-top: 12px; background: var(--card);
+      border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+    }
+    .preview.show { display: block; }
+    .pv-title { font-size: 12.5px; font-weight: 600; line-height: 1.4; margin-bottom: 4px; }
+    .pv-meta { font-size: 11px; color: var(--muted); display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+    .pv-ad {
+      display: none; font-size: 11px; color: var(--warn);
+      background: #252112; border: 1px solid #5c522a;
+      padding: 5px 8px; border-radius: 6px; margin-bottom: 8px; line-height: 1.4;
+    }
+    .pv-ad.show { display: block; }
+    .pv-dl { display: flex; gap: 8px; align-items: center; }
+    .pv-size { font-size: 11.5px; color: var(--warn); white-space: nowrap; }
+    .loading { text-align: center; color: var(--muted); padding: 14px 0; font-size: 12px; }
+
+    /* 任务列表 */
+    .tasks { margin-top: 12px; }
+    .tasks-head {
+      background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+      padding: 9px 12px; margin: 12px 0 10px;
+    }
+    .th-top { display: flex; align-items: baseline; gap: 10px; font-size: 12px; }
+    .th-top #tasksSummary { font-weight: 600; }
+    .th-top .spd { color: var(--ok); margin-left: auto; font-weight: 600; }
+    .task-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+    .task-actions button {
+      font-size: 11px; padding: 4px 9px; border-radius: 6px; font-weight: 500;
+    }
+    .task-path {
+      font-size: 11px; color: var(--muted); margin-top: 5px;
+      word-break: break-all; cursor: pointer;
+    }
+    .task-path:hover { color: var(--text); }
+    .chk { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); margin-top: 6px; cursor: pointer; }
+    .chk input { accent-color: var(--accent); }
+    .task {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 10px; margin-bottom: 8px;
+    }
+    .task-head { display: flex; align-items: center; gap: 6px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+    .dot.queued { background: var(--warn); }
+    .dot.downloading { background: var(--accent); animation: blink 1s infinite; }
+    .dot.done { background: var(--ok); }
+    .dot.error { background: var(--bad); }
+    @keyframes blink { 50% { opacity: .3; } }
+    .task-title {
+      font-size: 12px; color: var(--text); flex: 1;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .task-meta { font-size: 11px; color: var(--muted); margin-top: 4px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .task-meta .spd { color: var(--ok); }
+    .bar { height: 4px; background: var(--border); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+    .bar > div { height: 100%; background: var(--accent); border-radius: 2px; transition: width .4s; }
+    .error-text { color: var(--bad); font-size: 11px; word-break: break-all; margin-top: 4px; }
+    .retry {
+      font-size: 11px; padding: 2px 10px; margin-left: auto; border-radius: 6px;
+      background: transparent; color: var(--warn); border: 1px solid #5c522a; cursor: pointer;
+    }
+    .retry:hover { background: #252112; }
+    .empty { color: var(--muted); text-align: center; padding: 14px 0; font-size: 12px; }
+    .footer { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    .footer button { flex: 1 1 45%; font-size: 12px; padding: 7px 10px; }
+
+    /* 页面视频候选列表 */
+    .page-videos { margin: 4px 0 10px; }
+    .pv-label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+    .pv-list { max-height: 150px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--card); }
+    .pv-item {
+      display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+      cursor: pointer; font-size: 12px; border-bottom: 1px solid var(--border);
+    }
+    .pv-item:last-child { border-bottom: none; }
+    .pv-item:hover { background: var(--border); }
+    .pv-item img {
+      width: 48px; height: 27px; object-fit: cover; border-radius: 4px;
+      background: #000; flex: none;
+    }
+    .pv-item .pv-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+    .pv-item .pv-badge { font-size: 10px; color: var(--accent); flex: none; white-space: nowrap; }
+
+    /* 目录浏览器 */
+    .dir-browser {
+      display: none; position: fixed; inset: 10px; z-index: 100;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 10px; flex-direction: column; padding: 10px;
+    }
+    .dir-browser.show { display: flex; }
+    .dir-path {
+      font-size: 11px; color: var(--muted); word-break: break-all;
+      padding: 4px 2px; border-bottom: 1px solid var(--border); margin-bottom: 4px;
+    }
+    .dir-list { flex: 1; overflow-y: auto; margin: 6px 0; }
+    .dir-item {
+      display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+      border-radius: 6px; cursor: pointer; font-size: 12.5px; color: var(--text);
+    }
+    .dir-item:hover { background: var(--border); }
+    .dir-item .ico { width: 14px; text-align: center; flex: none; }
+    .dir-empty { color: var(--muted); font-size: 12px; text-align: center; padding: 20px 0; }
+    .dir-foot { display: flex; gap: 8px; }
+    .dir-foot button { flex: 1; }
+  </style>
+</head>
+<body>
+  <h1>
+    <img src="icons/icon48.png" alt="" />
+    yt-dlp 视频下载助手
+    <span id="health" class="badge">检测中…</span>
+    <button id="launchBtn" class="btn-ghost" style="display:none; font-size:11px; padding:3px 10px; margin-left:auto">⚡ 启动服务</button>
+  </h1>
+
+  <div class="field">
+    <label for="url">视频链接 <span id="pageBadge" class="mini-badge" style="display:none">📄 已检测到页面视频</span></label>
+    <input type="text" id="url" placeholder="https://www.youtube.com/watch?v=..." />
+  </div>
+
+  <!-- 页面视频候选列表 -->
+  <div class="page-videos" id="pageVideos" style="display:none">
+    <label class="pv-label">📄 页面视频（点击选择，网页中会红框高亮定位）</label>
+    <div class="pv-list" id="pageVideoList"></div>
+  </div>
+
+  <div class="field" style="margin-top:6px">
+    <label for="saveDir">保存位置 <span class="mini-badge" id="dirMode">本次下载</span></label>
+    <div class="row">
+      <input type="text" id="saveDir" list="recentDirs" placeholder="E:\AI软件\视频下载\downloads" />
+      <datalist id="recentDirs"></datalist>
+      <button id="browseDir" class="btn-ghost" title="浏览并选择文件夹（仅本次下载生效）" style="white-space:nowrap">浏览…</button>
+      <button id="openSaveDir" class="btn-ghost" title="打开该文件夹" style="white-space:nowrap">📂</button>
+    </div>
+    <label class="chk"><input type="checkbox" id="setAsDefault" /> 同时设为默认保存位置（下次自动使用）</label>
+  </div>
+  <div class="row">
+    <button id="previewBtn" class="btn-ghost" style="flex:1">🔍 解析视频信息</button>
+    <button id="syncCookie" class="btn-ghost" title="把浏览器登录态 Cookie 同步给本地 yt-dlp（抖音/TikTok/B站需要）">🍪 同步</button>
+    <button id="download" class="btn-primary" disabled>下载</button>
+  </div>
+  <div class="hint" id="hint"></div>
+
+  <!-- 预览卡片 -->
+  <div class="preview" id="preview">
+    <div class="pv-title" id="pvTitle"></div>
+    <div class="pv-meta">
+      <span id="pvAuthor"></span><span id="pvDuration"></span>
+    </div>
+    <div class="pv-ad" id="pvAd">⚠️ 检测到页面正在播放广告，下载的目标仍是视频本体，请确认下方标题是否为你要的视频</div>
+    <div class="pv-dl">
+      <select id="fmtSelect"></select>
+      <span class="pv-size" id="pvSize"></span>
+    </div>
+  </div>
+
+  <div class="tasks-head" id="tasksHead" style="display:none">
+    <div class="th-top">
+      <span id="tasksSummary">…</span>
+      <span class="spd" id="tasksSpeed"></span>
+    </div>
+    <div class="bar"><div id="tasksBar" style="width:0%"></div></div>
+  </div>
+
+  <div class="tasks" id="tasks">
+    <div class="empty">暂无下载任务</div>
+  </div>
+
+  <div class="footer">
+    <button id="openTasks" class="btn-primary">📊 任务中心</button>
+    <button id="openFolder" class="btn-ghost">📂 打开目录</button>
+    <button id="refresh" class="btn-ghost">↻ 刷新</button>
+    <button id="copyUrl" class="btn-ghost">🔗 复制链接</button>
+  </div>
+
+  <!-- 目录浏览器覆盖层 -->
+  <div class="dir-browser" id="dirBrowser">
+    <div class="dir-path" id="dirPath">…</div>
+    <div class="dir-list" id="dirList"></div>
+    <div class="dir-foot">
+      <button id="dirUp" class="btn-ghost">⬆ 上级</button>
+      <button id="dirCancel" class="btn-ghost">取消</button>
+      <button id="dirSelect" class="btn-primary">使用此文件夹</button>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

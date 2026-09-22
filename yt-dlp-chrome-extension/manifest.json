@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "yt-dlp 视频下载助手",
+  "version": "2.5.0",
+  "description": "配合本地 yt-dlp 服务：下载前预览标题/大小/分辨率，可按次指定保存文件夹，下载进度显示在图标角标与任务中心，完成后一键定位文件；抖音等站点自动同步浏览器 Cookie，并可一键启动本地服务",
+  "minimum_chrome_version": "110",
+  "permissions": ["activeTab", "contextMenus", "storage", "notifications", "nativeMessaging", "cookies", "alarms"],
+  "host_permissions": [
+    "http://127.0.0.1:8787/*",
+    "http://localhost:8787/*",
+    "*://*.douyin.com/*",
+    "*://*.iesdouyin.com/*",
+    "*://*.tiktok.com/*",
+    "*://*.bilibili.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "yt-dlp 下载助手",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
