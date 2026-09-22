@@ -33,12 +33,13 @@
 
 ```
 E:\AI软件\视频下载\
-├── vdl.py                         # ★ 命令行/ AI 入口（一行命令下载，返回 JSON）
-├── mcp_server.py                  # ★ MCP stdio 服务器（零依赖，给 AI 当工具用）
-├── setup.py                       # ★ 新机器一键初始化 + 自检
-├── AGENTS.md                      # ★ 给 Codex 等编码 AI 看的操作说明
-├── skills\video-download\SKILL.md # ★ WorkBuddy/Claude Skill（复制到 ~/.workbuddy/skills/ 即生效）
-├── docs\API.md                    # ★ 接口说明（CLI / MCP / HTTP / 配置 / 排错）
+├── vdl.py                          # ★ 命令行 / AI 入口（一行命令下载，返回 JSON）
+├── install_ai.py                   # ★ 一条命令把上面这层接入 AI（Skill / MCP / AGENTS.md）
+├── mcp_server.py                   # ★ MCP stdio 服务器（零依赖，给 AI 当工具用，可选）
+├── setup.py                        # ★ 新机器一键初始化 + 自检
+├── AGENTS.md                       # ★ 给 Codex 等编码 AI 看的操作说明（仓库内自动生效）
+├── skills\video-download\SKILL.md.in  # ★ Skill 模板（含占位符，由 install_ai.py 渲染后安装）
+├── docs\API.md                     # ★ 接口说明（CLI / MCP / HTTP / 配置 / 排错）
 ├── yt-dlp\                        # yt-dlp 官方源码（git clone，不入库）
 ├── yt-dlp-server\
 │   ├── download_server.py         # 下载内核 + 本地 HTTP 服务（纯标准库，零依赖）
@@ -95,32 +96,52 @@ JSON 对象（进度/日志走 stderr），AI 直接取 `file_path` 就行：
 | 存到指定目录 | `python vdl.py "<url>" --dir "D:\Videos" --json` |
 | 抖音分享文案直接粘 | `python vdl.py "9.92 复制打开抖音… https://v.douyin.com/xxxx/ …"` |
 
-### 让 AI 直接调用（MCP）
+### 一条命令接入 AI（推荐）
 
-```json
-{
-  "mcpServers": {
-    "video-downloader": {
-      "command": "python",
-      "args": ["E:\\AI软件\\视频下载\\mcp_server.py"]
-    }
-  }
-}
+```bash
+python install_ai.py          # 装 Skill（默认，最省）
+python install_ai.py --all    # 顺带注册 MCP + 写 ~/.codex/AGENTS.md
 ```
 
-配置位置：WorkBuddy 写 `~/.workbuddy/mcp.json`（然后在连接器页「自定义连接器」点**信任**）；
-Claude Desktop / Codex / Cursor 写各自的 mcp 配置。工具清单见 `docs/API.md`。
+跑完这一步，以后直接把链接丢给 AI 说「下载这个 720p」就行，不用再交代任何背景。
 
-### 装成 Skill
+### 该选哪个：CLI / Skill / MCP ？
 
-把 `skills\video-download\` 整个目录复制到 `C:\Users\<你>\.workbuddy\skills\` 下即可。
-之后直接说「把这个视频下下来 720p」，AI 就会自己跑 `vdl.py`。
+三者不是三选一，而是**一个内核 + 三层入口**。`download_server.py` 是唯一内核，
+`vdl.py` 直接 import 它，`mcp_server.py` 调 `vdl.py`——逻辑永远只有一份。
+
+| | 上下文开销 | 什么时候用 |
+|---|---|---|
+| **CLI**（`vdl.py`） | **0** | 内核。自己敲、脚本调、AI 直接跑，都走它 |
+| **Skill**（`install_ai.py` 默认） | 描述 **~180 字符常驻**，正文 3.9k 字符**按需加载** | ★ 最省。想让 AI「看到链接就知道怎么办」就装它 |
+| **MCP**（`--mcp`） | 工具定义 **~1.8k 字符全量常驻**，每次请求都带 | 跨客户端要标准化工具形态、或不想让 AI 读文档时 |
+
+**结论：Skill 是性价比最高的接入方式，开销约为 MCP 的 1/10。** MCP 不是必须的——
+它唯一的优势是「客户端自带工具面板、AI 不用读说明也能调」，代价是那 1.8k 字符的
+schema 会进入**每一次**请求。所以默认只装 Skill，MCP 用 `--mcp` 显式打开。
+
+装完 MCP 后**不会自动生效**：去「连接器 → 自定义连接器」，对 `ytdlp-video-downloader`
+点一下**信任**。
+
+### 其它客户端
+
+```bash
+python install_ai.py --target claude   # 装到 ~/.claude/skills/
+python install_ai.py --target both     # workbuddy + claude 都装
+python install_ai.py --agents          # 只写 ~/.codex/AGENTS.md（Codex 全局兜底）
+python install_ai.py --status          # 看现在装了什么
+python install_ai.py --uninstall       # 卸载（只删自己装的，陌生文件会拒绝）
+```
+
+换电脑或挪了目录，**重新跑一次 `install_ai.py` 即可**——所有绝对路径会被刷新。
 
 ### 新机器初始化
 
-```powershell
+```bash
 git clone <本仓库> "E:\AI软件\视频下载"
+cd "E:\AI软件\视频下载"
 python setup.py --test        # 检查 Python / yt-dlp / ffmpeg / 配置，并联网验证一次
+python install_ai.py --all    # 接入 AI
 ```
 
 ## 工作原理

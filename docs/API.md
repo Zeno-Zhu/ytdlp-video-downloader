@@ -19,6 +19,63 @@
 
 ---
 
+## 0. 该选哪个入口 / 怎么装（先读这一节）
+
+### 0.1 上下文开销对比
+
+三个入口不是三选一，而是**一个内核 + 三层入口**。差别在于「AI 要为你付出多少常驻上下文」：
+
+| 入口 | 常驻上下文 | 何时加载正文 | 结论 |
+|---|---|---|---|
+| CLI | **0** | — | 内核。任何 AI 只要能跑命令就能用 |
+| Skill | **~180 字符**（仅 frontmatter 的 description） | 用户真的要下视频时，才读 3.9k 字符正文 | ★ **最省** |
+| MCP | **~1.8k 字符**（工具名 + 描述 + inputSchema 全量） | 常驻，**每次请求都带** | 仅在需要跨客户端标准化时开 |
+
+> 测法：Skill 只有 `name` + `description` 会进系统提示，正文是"按需加载"；
+> MCP 的 `tools/list` 结果（5 个工具的 name + description + JSON Schema）会被客户端拼进每一次请求。
+
+**所以默认装 Skill。** MCP 的唯一优势是「AI 不用读说明、客户端自带工具面板也能调」，
+代价是那 1.8k 字符长期占位——只在"跨多个客户端、且不想维护说明文档"时才值得。
+
+### 0.2 安装（一条命令）
+
+```bash
+python install_ai.py                 # 装 Skill 到 ~/.workbuddy/skills/（默认，最省）
+python install_ai.py --all           # Skill + MCP + ~/.codex/AGENTS.md
+python install_ai.py --mcp           # 只额外注册 MCP 到 ~/.workbuddy/mcp.json
+python install_ai.py --agents        # 只额外写 ~/.codex/AGENTS.md
+python install_ai.py --target claude # 装到 ~/.claude/skills/
+python install_ai.py --target both   # workbuddy + claude
+python install_ai.py --dry-run       # 只打印计划，不落盘
+python install_ai.py --status        # 查看当前安装状态
+python install_ai.py --uninstall     # 卸载（只删自己装的，陌生文件会拒绝）
+```
+
+脚本做的事：
+
+1. 渲染 `skills/video-download/SKILL.md.in` 模板（把 `{{PY}}` / `{{REPO}}` / `{{VDL}}`
+   替换成**本机绝对路径**），写到目标 Skill 目录；
+2. `--mcp`：往 `~/.workbuddy/mcp.json` 的 `mcpServers` 里**合并**写入
+   `ytdlp-video-downloader` 条目（不覆盖别的 MCP，写前自动备份 `.bak-<时间戳>`）；
+3. `--agents`：往 `~/.codex/AGENTS.md` 追加一段带标记的说明（幂等，重复跑不会重复追加）。
+
+**为什么用脚本装而不是手工复制**：Skill 正文里含仓库绝对路径，而每台机器的路径不同。
+`install_ai.py` 在安装时把路径**写死**进渲染结果，AI 拿到的就是可直接执行的命令，不需要自己找路。
+换机器或挪目录后重跑一次即可刷新。
+
+### 0.3 各客户端配置位置
+
+| 客户端 | Skill 目录 | MCP 配置 |
+|---|---|---|
+| WorkBuddy | `~/.workbuddy/skills/<name>/SKILL.md` | `~/.workbuddy/mcp.json` |
+| Claude Code | `~/.claude/skills/<name>/SKILL.md` | 各自 mcp 配置 |
+| Codex | 用 `AGENTS.md`（项目根或 `~/.codex/AGENTS.md`） | 各自 mcp 配置 |
+
+WorkBuddy 写完 `mcp.json` **不会自动生效**：打开「连接器 → 自定义连接器」，
+对 `ytdlp-video-downloader` 点**信任**才启用。
+
+---
+
 ## 1. CLI —— `vdl.py`
 
 ### 1.1 用法
@@ -129,41 +186,32 @@ python vdl.py "https://youtu.be/XXXX" --dir "D:\Videos" --subs --open          #
 
 ### 2.2 客户端配置
 
-**通用（`.mcp.json`）：**
+**推荐：自动写**（会合并进现有配置，不覆盖别的 MCP，并自动备份）：
+
+```bash
+python install_ai.py --mcp
+```
+
+**手工写**（等价于上面那条命令的产物）：
 
 ```json
 {
   "mcpServers": {
-    "video-downloader": {
-      "command": "python",
-      "args": ["E:\\AI软件\\视频下载\\mcp_server.py"]
+    "ytdlp-video-downloader": {
+      "command": "C:/Users/<你>/.workbuddy/binaries/python/versions/3.13.12/python.exe",
+      "args": ["E:/AI软件/视频下载/mcp_server.py"],
+      "env": { "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8" }
     }
   }
 }
 ```
 
-**WorkBuddy** → 写进 `~/.workbuddy/mcp.json`，然后在连接器管理页右上角「自定义连接器」里点 **信任**：
-
-```json
-{
-  "mcpServers": {
-    "video-downloader": {
-      "command": "python",
-      "args": ["E:\\AI软件\\视频下载\\mcp_server.py"]
-    }
-  }
-}
-```
-
-**Codex / Claude Desktop** 同理，把 `command` 换成解释器绝对路径更稳；Windows 上建议：
-
-```json
-{"command": "C:\\Users\\<你>\\.workbuddy\\binaries\\python\\versions\\3.13.12\\python.exe",
- "args": ["E:\\AI软件\\视频下载\\mcp_server.py"]}
-```
-
-> 机器路径不同没关系，`mcp_server.py` 会按自身位置找同目录的 `vdl.py`。
-> 手动自测：`python tools/_mcp_test.py` 走一遍 initialize / tools/list / tools/call。
+- `command` 一定要是**解释器绝对路径**（不要写裸 `python`，客户端不一定继承你的 PATH）。
+- `args` 指向 `mcp_server.py`；它按**自身位置**找同目录的 `vdl.py`，所以仓库挪了只要改这一行。
+- WorkBuddy 的配置位置是 `~/.workbuddy/mcp.json`，写完**不会自动生效**：
+  打开「连接器 → 自定义连接器」，对 `ytdlp-video-downloader` 点 **信任**。
+- Codex / Claude Desktop / Cursor 写各自的 mcp 配置，结构同上。
+- 手动自测协议：`python tools/mcp_selftest.py`（走一遍 initialize / tools/list / tools/call）。
 
 ---
 
@@ -314,14 +362,18 @@ curl -s http://127.0.0.1:8787/api/tasks/ab12cd34ef56
 
 ## 5. 新机器上跑起来
 
-```powershell
+```bash
 # 1) 克隆仓库
-git clone https://github.com/Zeno-Zhu/<repo>.git "E:\AI软件\视频下载"
+git clone https://github.com/Zeno-Zhu/ytdlp-video-downloader.git "E:\AI软件\视频下载"
 
-# 2) 初始化（检查 Python、安装/升级 yt-dlp、生成 config.json）
-powershell -ExecutionPolicy Bypass -File setup.ps1
+# 2) 初始化（检查 Python / yt-dlp / ffmpeg，生成 config.json，联网自检）
+cd "E:\AI软件\视频下载"
+python setup.py --test
 
-# 3) 验证
+# 3) 接入 AI（Skill 必装；想同时要 MCP 和 Codex 说明就加 --all）
+python install_ai.py
+
+# 4) 验证
 python vdl.py "https://www.youtube.com/watch?v=jXwOcpkMQAA" --info --json
 ```
 

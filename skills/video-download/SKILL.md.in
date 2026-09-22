@@ -10,13 +10,14 @@ description: 给一个视频链接就下载到本地（默认 720p MP4、优先 
 ## 一行调用
 
 ```bash
-PY="C:/Users/Administrator/.workbuddy/binaries/python/versions/3.13.12/python.exe"
-[ -x "$PY" ] || PY=python          # 其它电脑：用任意 Python 3.8+，或仓库里的 setup.ps1
-"$PY" "E:/AI软件/视频下载/vdl.py" "<视频链接>" --quality 720 --json
+PY="{{PY}}"
+[ -x "$PY" ] || PY=python
+"$PY" "{{VDL}}" "<视频链接>" --quality 720 --json
 ```
 
-> 仓库位置可以换：`E:/AI软件/视频下载/` 是当前机器的路径；其它电脑上换成该仓库的实际路径即可，
-> 脚本内部会自己找到同目录下的 `yt-dlp-server/`（也可用环境变量 `YTDLP_SERVER_DIR` 指定）。
+> 仓库位置：`{{REPO}}`（此路径由 `install_ai.py` 在安装时写死）。
+> 如果换机器或挪了目录，重新跑一次 `python install_ai.py` 即可刷新。
+> 找不到脚本时先确认仓库在不在；在的话跑 `python setup.py`（装 yt-dlp / ffmpeg / 配置）。
 
 **`--json` 必加**：这样 stdout 只有一个 JSON 对象，直接 `json.loads` 就能取字段；
 进度和日志全都走 stderr，不会污染结果。
@@ -28,7 +29,7 @@ PY="C:/Users/Administrator/.workbuddy/binaries/python/versions/3.13.12/python.ex
   "ok": true,                       // 成功与否，先看这个
   "url": "https://...",
   "title": "视频标题",
-  "file_path": "E:\\...\\downloads\\标题 [视频ID].mp4",   // ★ 直接把这个路径给用户
+  "file_path": "{{REPO}}/downloads/标题 [视频ID].mp4",   // ★ 直接把这个路径给用户
   "filename": "标题 [视频ID].mp4",
   "size_mb": 128.1,
   "resolution": "1280x720",         // 实际下到的分辨率，可用来向用户确认
@@ -52,15 +53,15 @@ PY="C:/Users/Administrator/.workbuddy/binaries/python/versions/3.13.12/python.ex
 
 | 用户说法 | 命令 |
 |---|---|
-| 下载这个视频 / 存下来 | `"$PY" vdl.py "<url>" --json` |
-| 要 1080p | `"$PY" vdl.py "<url>" --quality 1080 --json` |
-| 只要音频 / 提取 MP3 | `"$PY" vdl.py "<url>" --audio --json` |
-| 顺便要字幕 | `"$PY" vdl.py "<url>" --subs --json` |
-| 先看看是什么视频 / 有哪些清晰度 | `"$PY" vdl.py "<url>" --info --json` |
-| 存到指定文件夹 | `"$PY" vdl.py "<url>" --dir "D:\\Videos" --json` |
-| 一次下多个 | `"$PY" vdl.py "<url1>" "<url2>" --json` |
-| 下整个合集 / 播放列表 | `"$PY" vdl.py "<url>" --playlist --json`（默认只下单个视频） |
-| 下完自动打开文件夹 | `"$PY" vdl.py "<url>" --open --json` |
+| 下载这个视频 / 存下来 | `"$PY" "{{VDL}}" "<url>" --json` |
+| 要 1080p | `"$PY" "{{VDL}}" "<url>" --quality 1080 --json` |
+| 只要音频 / 提取 MP3 | `"$PY" "{{VDL}}" "<url>" --audio --json` |
+| 顺便要字幕 | `"$PY" "{{VDL}}" "<url>" --subs --json` |
+| 先看看是什么视频 / 有哪些清晰度 | `"$PY" "{{VDL}}" "<url>" --info --json` |
+| 存到指定文件夹 | `"$PY" "{{VDL}}" "<url>" --dir "D:\\Videos" --json` |
+| 一次下多个 | `"$PY" "{{VDL}}" "<url1>" "<url2>" --json` |
+| 下整个合集 / 播放列表 | `"$PY" "{{VDL}}" "<url>" --playlist --json`（默认只下单个视频） |
+| 下完自动打开文件夹 | `"$PY" "{{VDL}}" "<url>" --open --json` |
 
 `--quality` 可写：`720`(默认) / `1080` / `480` / `2160` / `best` / `audio` / `id:<格式ID>`。
 `id:` 的值从 `--info` 的输出里挑（`formats[].format_id`），用于"就要这个格式"。
@@ -97,9 +98,9 @@ PY="C:/Users/Administrator/.workbuddy/binaries/python/versions/3.13.12/python.ex
 - **下载目录里出现 `.f616.mp4.part` / `-FragN`**：上次失败的残留，yt-dlp 下次会接着下；
   想清干净就只删这些明确是残留的文件，**不要**对 `downloads\` 做通配删除。
 
-## 还想更省事：MCP
+## 还想更省事：MCP（可选）
 
-仓库里带了一个零依赖的 MCP 服务器 `mcp_server.py`，暴露
+仓库里带了一个零依赖的 MCP 服务器 `{{REPO}}/mcp_server.py`，暴露
 `download_video` / `preview_video` / `list_downloads` / `get_task_status` / `open_folder`。
-在支持 MCP 的客户端里配好之后，可以直接"工具调用"，连命令行都不用敲。
-配置方式见仓库 `docs/API.md`。
+装法：`python "{{REPO}}/install_ai.py" --mcp`。
+注意 MCP 的工具定义会**常驻上下文**，只在需要跨客户端标准化时再开。

@@ -69,4 +69,8 @@ python vdl.py "<视频链接>" --info --json     # 标题/作者/时长/全部�
 
 - 本地 HTTP 服务（浏览器插件用）：`yt-dlp-server/download_server.py`，默认 `127.0.0.1:8787`，
   接口清单见 `docs/API.md`。
-- 新机器初始化：`powershell -ExecutionPolicy Bypass -File setup.ps1`
+- 新机器初始化：`python setup.py --test`
+- 把本仓库接入 AI（Skill / MCP / 本机路径写入）：`python install_ai.py --all`
+  —— 换机器或挪目录后重跑一次，所有绝对路径会刷新。
+  Skill 模板在 `skills/video-download/SKILL.md.in`（含 `{{PY}}` / `{{REPO}}` / `{{VDL}}` 占位符），
+  **改说明改模板，不要去改 `~/.workbuddy/skills/` 里那份渲染结果**。
